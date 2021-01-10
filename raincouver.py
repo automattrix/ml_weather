@@ -9,6 +9,8 @@ def main(params):
     usgs_request = UsgsRequest(params=params)
     usgs_request.login()
     usgs_request.search_dataset()
+    usgs_request.scene_search()
+    usgs_request.download_scenes()
 
 
 if __name__ == '__main__':

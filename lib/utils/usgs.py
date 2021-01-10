@@ -1,6 +1,7 @@
 import json
 import requests
 import datetime
+import time
 
 
 def post_request(data, url, api_key=None):
@@ -25,6 +26,9 @@ class UsgsRequest:
         self.api_key = None
         self.session_id = None
         self.login_time = None
+        self.dataset_alias = None
+
+        self.scenes_id_list = None
 
     def build_enpoint_url(self, endpoint):
         base_url = self.params['API_URL']
@@ -67,8 +71,138 @@ class UsgsRequest:
 
         datasets = post_request(url=url, data=dataset_search_params, api_key=self.api_key)
         datasets = json.loads(datasets.text)
-        print("Found ", len(datasets), " datasets\n")
-        print(datasets)
+        print(f"Found: {datasets['data'][0]['datasetAlias']}")
 
-    def download_data(self):
-        test = ''
+        self.dataset_alias = datasets['data'][0]['datasetAlias']
+
+    def scene_search(self):
+        dataset = self.dataset_alias
+        acquisitionFilter = {"end": "2020-07-15",
+                             "start": "2020-06-01"}
+
+        # Path: 047
+        # Row: 026
+        spatialFilter = {'filterType': "mbr",
+                         'lowerLeft': {'latitude': 48.4824, 'longitude': -124.0711},
+                         'upperRight': {'latitude': 49.1526, 'longitude': -122.9024}
+                         }
+
+        scene_search_parameters = {
+            'datasetName': dataset,
+            'maxResults': 5,
+            'startingNumber': 1,
+            'sceneFilter': {
+                'acquisitionFilter': acquisitionFilter,
+                'spatialFilter': spatialFilter
+            }
+        }
+
+        url = self.build_enpoint_url(endpoint='scene-search')
+        scenes = post_request(data=scene_search_parameters, url=url, api_key=self.api_key)
+        scenes = json.loads(scenes.text)
+        records_returned = scenes['data']['recordsReturned']
+        print(scenes['data'].keys())
+        scenes_list = []
+        if records_returned > 0:
+            scene_results = scenes['data']['results']
+
+            for result in scene_results:
+                # print(result.keys())
+                scenes_list.append(result['entityId'])
+
+        self.scenes_id_list = scenes_list
+
+    def download_scenes(self):
+        # https://m2m.cr.usgs.gov/api/docs/example/download_data-py
+        scene_id_list = self.scenes_id_list
+        dataset = self.dataset_alias
+        url = self.build_enpoint_url(endpoint='download-options')
+
+        download_options_parameters = {
+            'datasetName': dataset,
+            'entityIds': scene_id_list
+        }
+
+        download_options = post_request(
+            data=download_options_parameters,
+            url=url,
+            api_key=self.api_key
+        )
+        download_options = json.loads(download_options.text)
+        download_options_results = download_options['data']
+
+        downloads_list = []
+
+        for option in download_options_results:
+            if option['available']:
+                print(option.keys())
+                print(option['productName'])
+                downloads_list.append(
+                    {'entityId': option['entityId'],
+                     'productId': option['id']
+                     }
+                )
+        if downloads_list:
+            requested_download_count = len(downloads_list)
+            # set a label for the download request
+            label = "download-sample"
+            download_request_parameters = {
+                'downloads': downloads_list,
+                'label': label
+            }
+            # Call the download to get the direct download urls
+            download_url = self.build_enpoint_url(endpoint='download-request')
+            download_requests = post_request(data=download_request_parameters, url=download_url, api_key=self.api_key)
+            download_requests = json.loads(download_requests.text)
+            download_requests_results = download_requests['data']
+            print(download_requests_results)
+
+            if download_requests_results['preparingDownloads'] is not None \
+                    and len(download_requests_results['preparingDownloads']) > 0:
+
+                download_retrieve_parameters = {'label': label}
+                more_download_url = self.build_enpoint_url(endpoint='download-retrieve')
+                more_download_urls = post_request(
+                    data=download_retrieve_parameters,
+                    url=more_download_url,
+                    api_key=self.api_key)
+                more_download_urls = json.loads(more_download_urls.text)
+                more_download_urls_results = more_download_urls['data']
+
+                download_ids = []
+
+                for download in more_download_urls_results['available']:
+                    download_ids.append(download['downloadId'])
+                    print("DOWNLOAD: " + download['url'])
+
+                for download in more_download_urls_results['requested']:
+                    download_ids.append(download['downloadId'])
+                    print("DOWNLOAD: " + download['url'])
+
+                # Didn't get all of the reuested downloads, call the download-retrieve method again after 30 seconds
+                while len(download_ids) < requested_download_count:
+                    preparing_downloads = requested_download_count - len(download_ids)
+                    print("\n", preparing_downloads, "downloads are not available. Waiting for 30 seconds.\n")
+                    time.sleep(30)
+                    print("Trying to retrieve data\n")
+
+                    more_download_urls = post_request(data=download_retrieve_parameters, url=download_url, api_key=self.api_key)
+                    more_download_urls= json.loads(more_download_urls.text)
+                    more_download_urls_results = more_download_urls['data']
+                    for download in more_download_urls_results['available']:
+                        if download['downloadId'] not in download_ids:
+                            download_ids.append(download['downloadId'])
+                            print("DOWNLOAD: " + download['url'])
+
+            else:
+                # Get all available downloads
+                for download in download_requests_results['availableDownloads']:
+                    # TODO :: Implement a downloading routine
+                    print("DOWNLOAD: " + download['url'])
+            print("\nAll downloads are available to download.\n")
+
+
+
+
+
+
