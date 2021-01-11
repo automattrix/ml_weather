@@ -2,6 +2,8 @@ import json
 import requests
 import datetime
 import time
+import yaml
+import os
 
 
 def post_request(data, url, api_key=None):
@@ -20,12 +22,19 @@ def post_request(data, url, api_key=None):
         return None
 
 
+def download_from_url(url, filename):
+    # To save to a relative path.
+    r = requests.get(url)
+    with open(f'../data/01_raw/{filename}', 'wb') as f:
+        f.write(r.content)
+
+
 class UsgsRequest:
     def __init__(self, params):
         self.params = params
         self.api_key = None
         self.session_id = None
-        self.login_time = None
+        self.last_login_time = None
         self.dataset_alias = None
 
         self.scenes_id_list = None
@@ -35,34 +44,66 @@ class UsgsRequest:
         endpoint_url = base_url + endpoint
         return endpoint_url
 
+    def check_previous_login(self):
+        login_check = False
+        login_session_path = './conf/local/login.yaml'
+
+        if os.path.exists(login_session_path):
+            with open(login_session_path, 'r') as login_yaml:
+                previous_session = yaml.load(login_yaml, Loader=yaml.FullLoader)
+                print(previous_session)
+
+                self.last_login_time = previous_session['last_login_time']
+
+                # API key from login valid for 2 hours
+                # Check if last login still valid
+                LOGIN_TIMEOUT = 7200
+                current_time = datetime.datetime.now()
+                time_elapsed = current_time - self.last_login_time
+                time_elapsed = time_elapsed.seconds
+                print(f"Time since last login: {time_elapsed / 60} min")
+
+                if time_elapsed < LOGIN_TIMEOUT:
+                    print("Valid session, continuing...")
+                    self.api_key = previous_session['api_key']
+                    login_check = True
+                else:
+                    print("No previous valid session. Logging in again...")
+
+        return login_check
+
     def login(self):
-        username = self.params['USERNAME']
-        password = self.params['PASSWORD']
-        data = {"username": username, "password": password}
-        url = self.build_enpoint_url(endpoint='login')
 
-        # API key from login valid for 2 hours
-        # Check if login
-        # current_time = datetime.datetime.now()
+        # Check for previous login
+        if not self.check_previous_login():
+            username = self.params['USERNAME']
+            password = self.params['PASSWORD']
+            data = {"username": username, "password": password}
+            url = self.build_enpoint_url(endpoint='login')
 
-        # if self.login_time is not None:
-        #     time_elapsed = current_time - self.login_time
+            r = post_request(data=data, url=url)
+            r = json.loads(r.text)
+            api_key = r['data']
+            session_id = r['sessionId']
+            error_code = r['errorCode']
+            error_message = r['errorMessage']
 
-        r = post_request(data=data, url=url)
-        r = json.loads(r.text)
-        api_key = r['data']
-        session_id = r['sessionId']
-        error_code = r['errorCode']
-        error_message = r['errorMessage']
+            if not error_code:
+                print("Login successful")
+                self.api_key = api_key
+                self.session_id = session_id
+                self.last_login_time = datetime.datetime.now()
 
-        if not error_code:
-            print("Login successful")
-            self.api_key = api_key
-            self.session_id = session_id
-            self.login_time = datetime.datetime.now()
-        else:
-            print("Login Unsuccessful")
-            print(error_message)
+                with open('./conf/local/login.yaml', 'w') as f:
+                    data = {
+                        'last_login_time': self.last_login_time,
+                        'api_key': self.api_key
+                    }
+                    yaml.dump(data, f)
+
+            else:
+                print("Login Unsuccessful")
+                print(error_message)
 
     def search_dataset(self):
         dataset_search_params = {'datasetName': self.params['DATASET']}
@@ -135,13 +176,15 @@ class UsgsRequest:
 
         for option in download_options_results:
             if option['available']:
-                print(option.keys())
-                print(option['productName'])
-                downloads_list.append(
-                    {'entityId': option['entityId'],
-                     'productId': option['id']
-                     }
-                )
+                # print(option.keys())
+                product_name = option['productName']
+
+                if product_name == 'LandsatLook Natural Color Image':
+                    downloads_list.append(
+                        {'entityId': option['entityId'],
+                         'productId': option['id']
+                         }
+                    )
         if downloads_list:
             requested_download_count = len(downloads_list)
             # set a label for the download request
@@ -166,6 +209,7 @@ class UsgsRequest:
                     data=download_retrieve_parameters,
                     url=more_download_url,
                     api_key=self.api_key)
+
                 more_download_urls = json.loads(more_download_urls.text)
                 more_download_urls_results = more_download_urls['data']
 
@@ -186,8 +230,13 @@ class UsgsRequest:
                     time.sleep(30)
                     print("Trying to retrieve data\n")
 
-                    more_download_urls = post_request(data=download_retrieve_parameters, url=download_url, api_key=self.api_key)
-                    more_download_urls= json.loads(more_download_urls.text)
+                    more_download_urls = post_request(
+                        data=download_retrieve_parameters,
+                        url=download_url,
+                        api_key=self.api_key
+                    )
+
+                    more_download_urls = json.loads(more_download_urls.text)
                     more_download_urls_results = more_download_urls['data']
                     for download in more_download_urls_results['available']:
                         if download['downloadId'] not in download_ids:
@@ -199,6 +248,7 @@ class UsgsRequest:
                 for download in download_requests_results['availableDownloads']:
                     # TODO :: Implement a downloading routine
                     print("DOWNLOAD: " + download['url'])
+                    print(download.keys())
             print("\nAll downloads are available to download.\n")
 
 
