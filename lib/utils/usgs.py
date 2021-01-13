@@ -11,15 +11,21 @@ import cgi
 
 def post_request(data, url, api_key=None):
     json_data = json.dumps(data)
-
+    r = None
     if api_key is None:
-        r = requests.post(url=url, data=json_data)
+        try:
+            r = requests.post(url=url, data=json_data)
+        except Exception as e:
+            print(e)
 
     else:
         headers = {'X-Auth-Token': api_key}
-        r = requests.post(url=url, data=json_data, headers=headers)
+        try:
+            r = requests.post(url=url, data=json_data, headers=headers)
+        except Exception as e:
+            print(e)
 
-    if r.status_code == 200:
+    if r is not None and r.status_code == 200:
         return r
     else:
         return None
@@ -54,6 +60,31 @@ def download_from_url(downloads):
             print("Already downloaded")
     if downloads_failed:
         print(downloads_failed)
+
+
+def filter_wrs(path: str, row: str, scenes: list) -> list:
+    """
+    Check if path and row matches parameters
+    :param path:
+    :param row:
+    :param scenes:
+    :return:
+    """
+    # LC80470262020195LGN00
+    # LC8 047 026 2020 19 5 LGN00
+    wrs_check = f"{path}{row}"
+    filtered_scenes = []
+
+    for scene in scenes:
+        try:
+            scene_parts = str(scene).split('LC8')[1][:6]  # TODO support more datasets
+
+            if str(wrs_check) in str(scene_parts):
+                filtered_scenes.append(scene)
+        except Exception as e:
+            print(e)
+
+    return filtered_scenes
 
 
 class UsgsRequest:
@@ -144,15 +175,23 @@ class UsgsRequest:
 
     def scene_search(self):
         dataset = self.dataset_alias
-        acquisition_filter = {"end": "2020-07-15",
-                             "start": "2020-06-01"}
+        acquisition_filter = {
+            "end": "2020-07-15",
+            "start": "2020-06-01"
+        }
 
         lower_left = self.params['COORDS']['lowerLeft']
         upper_right = self.params['COORDS']['upperRight']
-        spatial_filter = {'filterType': "mbr",
-                         'lowerLeft': {'latitude': lower_left['latitude'], 'longitude': lower_left['longitude']},
-                         'upperRight': {'latitude': upper_right['latitude'], 'longitude': upper_right['longitude']}
-                         }
+        ll_la = float(lower_left['latitude'])
+        ll_lo = float(lower_left['longitude'])
+        ur_la = float(upper_right['latitude'])
+        ur_lo = float(upper_right['longitude'])
+
+        spatial_filter = {
+            'filterType': "mbr",
+            'lowerLeft': {'latitude': ll_la, 'longitude': ll_lo},
+            'upperRight': {'latitude': ur_la, 'longitude': ur_lo}
+        }
 
         scene_search_parameters = {
             'datasetName': dataset,
@@ -174,6 +213,7 @@ class UsgsRequest:
 
             for result in scene_results:
                 scenes_list.append(result['entityId'])
+
             self.scenes_id_list = scenes_list
             print(f"Found: {len(self.scenes_id_list)} results")
             print(self.scenes_id_list)
@@ -181,8 +221,22 @@ class UsgsRequest:
             print("Search found no results.\n")
             sys.exit()
 
-        # TODO Filter scene list by path/row
-        
+        filter_path = self.params['FILTER_PATH']
+        filter_row = self.params['FILTER_ROW']
+        print("Applying filters")
+        filtered_scenes = filter_wrs(
+            path=filter_path,
+            row=filter_row,
+            scenes=scenes_list
+        )
+        if filtered_scenes:
+            self.scenes_id_list = filtered_scenes
+            print(f"Remaining: {len(self.scenes_id_list)} results")
+            print(self.scenes_id_list)
+        else:
+            print("No scenes matching filters")
+            sys.exit()
+
     def retrieve_scenes_downloads(self):
         # https://m2m.cr.usgs.gov/api/docs/example/download_data-py
         scene_id_list = self.scenes_id_list
@@ -290,4 +344,3 @@ class UsgsRequest:
         self.scene_search()
         self.retrieve_scenes_downloads()
         self.download_images()
-

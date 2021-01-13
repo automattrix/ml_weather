@@ -9,5 +9,5 @@ params:
     COORDS:
       'lowerLeft': {'latitude': 48.4824, 'longitude': -124.0711}
       'upperRight': {'latitude': 49.1526, 'longitude': -122.9024}
-    PATH: 047
-    ROW: 026
+    FILTER_PATH: '047'
+    FILTER_ROW: '026'
