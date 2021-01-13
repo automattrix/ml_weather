@@ -6,3 +6,6 @@ Realistically this will probably predict rain on most days, but for the other 3 
 
 ### Usage
 Coming soon.. 
+
+### Limitations
+- Current scene filtering only supports 1 path, 1 row
