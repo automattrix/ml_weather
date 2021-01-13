@@ -1,5 +1,3 @@
-import requests
-import json
 import os
 from lib.utils.env import load_params, set_env
 from lib.utils.usgs import UsgsRequest
@@ -7,11 +5,7 @@ from lib.utils.usgs import UsgsRequest
 
 def main(params):
     usgs_request = UsgsRequest(params=params)
-    usgs_request.login()
-    usgs_request.search_dataset()
-    usgs_request.scene_search()
-    usgs_request.retrieve_scenes_downloads()
-    usgs_request.download_images()
+    usgs_request.run()
 
 
 if __name__ == '__main__':

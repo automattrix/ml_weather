@@ -144,14 +144,14 @@ class UsgsRequest:
 
     def scene_search(self):
         dataset = self.dataset_alias
-        acquisitionFilter = {"end": "2020-07-15",
+        acquisition_filter = {"end": "2020-07-15",
                              "start": "2020-06-01"}
 
-        # Path: 047
-        # Row: 026
-        spatialFilter = {'filterType': "mbr",
-                         'lowerLeft': {'latitude': 48.4824, 'longitude': -124.0711},
-                         'upperRight': {'latitude': 49.1526, 'longitude': -122.9024}
+        lower_left = self.params['COORDS']['lowerLeft']
+        upper_right = self.params['COORDS']['upperRight']
+        spatial_filter = {'filterType': "mbr",
+                         'lowerLeft': {'latitude': lower_left['latitude'], 'longitude': lower_left['longitude']},
+                         'upperRight': {'latitude': upper_right['latitude'], 'longitude': upper_right['longitude']}
                          }
 
         scene_search_parameters = {
@@ -159,8 +159,8 @@ class UsgsRequest:
             'maxResults': 5,
             'startingNumber': 1,
             'sceneFilter': {
-                'acquisitionFilter': acquisitionFilter,
-                'spatialFilter': spatialFilter
+                'acquisitionFilter': acquisition_filter,
+                'spatialFilter': spatial_filter
             }
         }
 
@@ -175,11 +175,14 @@ class UsgsRequest:
             for result in scene_results:
                 scenes_list.append(result['entityId'])
             self.scenes_id_list = scenes_list
-
+            print(f"Found: {len(self.scenes_id_list)} results")
+            print(self.scenes_id_list)
         else:
             print("Search found no results.\n")
             sys.exit()
 
+        # TODO Filter scene list by path/row
+        
     def retrieve_scenes_downloads(self):
         # https://m2m.cr.usgs.gov/api/docs/example/download_data-py
         scene_id_list = self.scenes_id_list
@@ -280,4 +283,11 @@ class UsgsRequest:
 
     def download_images(self):
         download_from_url(downloads=self.image_download_list)
+
+    def run(self):
+        self.login()
+        self.search_dataset()
+        self.scene_search()
+        self.retrieve_scenes_downloads()
+        self.download_images()
 
