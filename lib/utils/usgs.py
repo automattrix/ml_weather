@@ -4,12 +4,15 @@ import datetime
 import time
 import yaml
 import os
+from urllib.request import urlopen, urlretrieve
+import sys
+import cgi
 
 
 def post_request(data, url, api_key=None):
     json_data = json.dumps(data)
 
-    if api_key == None:
+    if api_key is None:
         r = requests.post(url=url, data=json_data)
 
     else:
@@ -22,11 +25,35 @@ def post_request(data, url, api_key=None):
         return None
 
 
-def download_from_url(url, filename):
-    # To save to a relative path.
-    r = requests.get(url)
-    with open(f'../data/01_raw/{filename}', 'wb') as f:
-        f.write(r.content)
+def download_from_url(downloads):
+    downloads_failed = []
+
+    for download in downloads:
+
+        download_url = download['url']
+        print("DOWNLOAD: " + download_url)
+
+        remotefile = urlopen(download_url)
+        remotefile_info = remotefile.info()['Content-Disposition']
+        value, params = cgi.parse_header(remotefile_info)
+        file_name = params["filename"]
+
+        print(f"Filename: {file_name}")
+
+        download_path = f'./data/01_raw/{file_name}'
+        print(download_path)
+
+        if not os.path.exists(download_path):
+            try:
+                urlretrieve(download_url, download_path)
+
+            except Exception as e:
+                print(e)
+                downloads_failed.append(download)
+        else:
+            print("Already downloaded")
+    if downloads_failed:
+        print(downloads_failed)
 
 
 class UsgsRequest:
@@ -38,6 +65,7 @@ class UsgsRequest:
         self.dataset_alias = None
 
         self.scenes_id_list = None
+        self.image_download_list = []
 
     def build_enpoint_url(self, endpoint):
         base_url = self.params['API_URL']
@@ -51,7 +79,6 @@ class UsgsRequest:
         if os.path.exists(login_session_path):
             with open(login_session_path, 'r') as login_yaml:
                 previous_session = yaml.load(login_yaml, Loader=yaml.FullLoader)
-                print(previous_session)
 
                 self.last_login_time = previous_session['last_login_time']
 
@@ -61,7 +88,7 @@ class UsgsRequest:
                 current_time = datetime.datetime.now()
                 time_elapsed = current_time - self.last_login_time
                 time_elapsed = time_elapsed.seconds
-                print(f"Time since last login: {time_elapsed / 60} min")
+                print(f"Time since last login: {round(time_elapsed / 60, 2)} min")
 
                 if time_elapsed < LOGIN_TIMEOUT:
                     print("Valid session, continuing...")
@@ -73,7 +100,6 @@ class UsgsRequest:
         return login_check
 
     def login(self):
-
         # Check for previous login
         if not self.check_previous_login():
             username = self.params['USERNAME']
@@ -142,18 +168,19 @@ class UsgsRequest:
         scenes = post_request(data=scene_search_parameters, url=url, api_key=self.api_key)
         scenes = json.loads(scenes.text)
         records_returned = scenes['data']['recordsReturned']
-        print(scenes['data'].keys())
         scenes_list = []
         if records_returned > 0:
             scene_results = scenes['data']['results']
 
             for result in scene_results:
-                # print(result.keys())
                 scenes_list.append(result['entityId'])
+            self.scenes_id_list = scenes_list
 
-        self.scenes_id_list = scenes_list
+        else:
+            print("Search found no results.\n")
+            sys.exit()
 
-    def download_scenes(self):
+    def retrieve_scenes_downloads(self):
         # https://m2m.cr.usgs.gov/api/docs/example/download_data-py
         scene_id_list = self.scenes_id_list
         dataset = self.dataset_alias
@@ -175,17 +202,19 @@ class UsgsRequest:
         downloads_list = []
 
         for option in download_options_results:
+
             if option['available']:
-                # print(option.keys())
                 product_name = option['productName']
 
-                if product_name == 'LandsatLook Natural Color Image':
+                if product_name == 'LandsatLook Natural Color Image':  # TODO make parameter
                     downloads_list.append(
                         {'entityId': option['entityId'],
-                         'productId': option['id']
+                         'productId': option['id'],
+                         'displayId': option['displayId']
                          }
                     )
         if downloads_list:
+
             requested_download_count = len(downloads_list)
             # set a label for the download request
             label = "download-sample"
@@ -198,8 +227,8 @@ class UsgsRequest:
             download_requests = post_request(data=download_request_parameters, url=download_url, api_key=self.api_key)
             download_requests = json.loads(download_requests.text)
             download_requests_results = download_requests['data']
-            print(download_requests_results)
 
+            master_image_downloads = []
             if download_requests_results['preparingDownloads'] is not None \
                     and len(download_requests_results['preparingDownloads']) > 0:
 
@@ -217,11 +246,11 @@ class UsgsRequest:
 
                 for download in more_download_urls_results['available']:
                     download_ids.append(download['downloadId'])
-                    print("DOWNLOAD: " + download['url'])
+                    self.image_download_list.append(download)
 
                 for download in more_download_urls_results['requested']:
                     download_ids.append(download['downloadId'])
-                    print("DOWNLOAD: " + download['url'])
+                    self.image_download_list.append(download)
 
                 # Didn't get all of the reuested downloads, call the download-retrieve method again after 30 seconds
                 while len(download_ids) < requested_download_count:
@@ -241,18 +270,14 @@ class UsgsRequest:
                     for download in more_download_urls_results['available']:
                         if download['downloadId'] not in download_ids:
                             download_ids.append(download['downloadId'])
-                            print("DOWNLOAD: " + download['url'])
+                            self.image_download_list.append(download)
 
             else:
                 # Get all available downloads
                 for download in download_requests_results['availableDownloads']:
-                    # TODO :: Implement a downloading routine
-                    print("DOWNLOAD: " + download['url'])
-                    print(download.keys())
+                    self.image_download_list.append(download)
             print("\nAll downloads are available to download.\n")
 
-
-
-
-
+    def download_images(self):
+        download_from_url(downloads=self.image_download_list)
 
