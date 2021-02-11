@@ -11,3 +11,14 @@ params:
       'upperRight': {'latitude': 49.1526, 'longitude': -122.9024}
     FILTER_PATH: '047'
     FILTER_ROW: '026'
+    SEARCH_START: '2020-01-01'
+    SEARCH_END: '2020-12-31'
+
+    # Image processing
+    IMAGE_EXT: 'jpg'
+    GENERATE_MASKS: True
+    GENERAT_ARRAYS: True
+
+    # Runtime
+    DOWNLOAD_SAT: True
+    PROCESS_IMGS: True

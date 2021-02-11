@@ -175,9 +175,12 @@ class UsgsRequest:
 
     def scene_search(self):
         dataset = self.dataset_alias
+        search_start = self.params['SEARCH_START']
+        search_end = self.params['SEARCH_END']
+
         acquisition_filter = {
-            "end": "2020-07-15",
-            "start": "2020-06-01"
+            "end": str(search_end),
+            "start": str(search_start)
         }
 
         lower_left = self.params['COORDS']['lowerLeft']
@@ -195,7 +198,7 @@ class UsgsRequest:
 
         scene_search_parameters = {
             'datasetName': dataset,
-            'maxResults': 5,
+            'maxResults': 50,
             'startingNumber': 1,
             'sceneFilter': {
                 'acquisitionFilter': acquisition_filter,
