@@ -16,6 +16,7 @@ params:
 
     # Image processing
     IMAGE_EXT: 'jpg'
+    PREPROCESS_IMGS: True
     GENERATE_MASKS: True
     GENERAT_ARRAYS: True
 
