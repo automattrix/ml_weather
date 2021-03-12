@@ -8,6 +8,7 @@ import numpy as np
 import imutils
 import cv2
 import tensorflow as tf
+import numpy as np
 import pandas as pd
 
 
@@ -89,17 +90,50 @@ class ImageProcessor:
             rotated = imutils.rotate(loaded_image, angles[0])
 
             # Save image
-            save_path = f'./data/02_preprocessing/rotated_{image}'
+            save_path = f'./data/02_preprocessing/{image}'
             cv2.imwrite(save_path, rotated)
 
             print(f'Fixed image rotation: \t {current_image}/{image_count}')
             current_image += 1
 
+    def crop_images(self):
+        image_count = len(self.images)
+        current_image = 1
+        for image in self.images:
+            image_path = f'./data/02_preprocessing/{image}'
+            # Load Image
+            loaded_image = cv2.imread(image_path)
+
+            gray = cv2.cvtColor(loaded_image, cv2.COLOR_BGR2GRAY)
+            thresh = cv2.threshold(gray, 30, 255, cv2.THRESH_BINARY)[1]
+            width, height = thresh.shape
+            half_height = ceil(height/2)
+
+            black_border = thresh[half_height]
+            black_border = ~(black_border != 0)
+            black_border_total_width = ceil((np.sum(black_border)) / 2)
+
+            scaling = 1.15
+            black_border_total_width = int(black_border_total_width * scaling)
+            w_left = black_border_total_width
+            w_right = width - black_border_total_width
+            h_bot = black_border_total_width
+            h_top = height - black_border_total_width
+
+            crop = loaded_image[h_bot:h_top, w_left:w_right]
+
+            # Save image
+            save_path = f'./data/02_preprocessing/cropped/{image}'
+            cv2.imwrite(save_path, crop)
+            print(f'Fixed image border: \t {current_image}/{image_count}')
+            current_image += 1
+
+
     def convert_greyscale(self):
         image_count = len(self.images)
         current_image = 1
         for image in self.images:
-            image_path = f'./data/01_raw/{image}'
+            image_path = f'./data/02_preprocessing/cropped/{image}'
 
             loaded_image = cv2.imread(image_path)
             gray = cv2.cvtColor(loaded_image, cv2.COLOR_BGR2GRAY)
@@ -145,17 +179,25 @@ class ImageProcessor:
     def run(self):
         image_ext = self.params['IMAGE_EXT']
 
-        # Rotate image
         if self.params['PREPROCESS_IMGS']:
+            # Rotate scene
             self.images = find_images(
                 data_dir='./data/01_raw/',
                 extension=image_ext
             )
             self.rotate_images()
 
+            # Crop scene
+            self.images = find_images(
+                data_dir='./data/02_preprocessing/',
+                extension=image_ext
+            )
+            self.crop_images()
+
+
         if self.params['GENERATE_MASKS']:
             self.images = find_images(
-                data_dir='./data/01_raw/',
+                data_dir='./data/02_preprocessing/cropped/',
                 extension=image_ext
             )
             self.convert_greyscale()
